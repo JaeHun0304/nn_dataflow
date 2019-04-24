@@ -18,12 +18,13 @@ import json
 import multiprocessing
 import sys
 import time
+import os
 from collections import OrderedDict
 
 from nn_dataflow.core import NNDataflow
 from nn_dataflow.core import Cost
 from nn_dataflow.core import DataCategoryEnum as de
-from nn_dataflow.core import MapStrategyEyeriss
+from nn_dataflow.core import MapStrategyOS
 from nn_dataflow.core import MemHierEnum as me
 from nn_dataflow.core import NodeRegion
 from nn_dataflow.core import Option
@@ -171,7 +172,7 @@ def do_scheduling(args):
 
     ## Search schedules.
 
-    nnd = NNDataflow(network, batch_size, resource, cost, MapStrategyEyeriss)
+    nnd = NNDataflow(network, batch_size, resource, cost, MapStrategyOS)
     tbeg = time.time()
     tops, cache_stats = nnd.schedule_search(options)
     tend = time.time()
@@ -319,8 +320,12 @@ def main():
     ''' Main function. '''
     args = argparser().parse_args()
     res = do_scheduling(args)
-    json.dump(res, sys.stdout, indent=2, default=lambda _: None)
-    sys.stdout.write('\n')
+    script_dir = os.path.dirname(__file__)
+    rel_path = "results/"
+    with open(os.path.join(script_dir, rel_path) + 'os_googlenet.json', 'w') as outfile:
+        json.dump(res, outfile, indent=2, default=lambda _: None)
+    #json.dump(res, sys.stdout, indent=2, default=lambda _: None)
+    #sys.stdout.write('\n')
     return 0 if res else 2
 
 

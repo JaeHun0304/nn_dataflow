@@ -94,12 +94,12 @@ class MapStrategyEyeriss(MapStrategy):
                 / (self.dim_array.size() * self.fold.size())
         assert self.util <= 1. + 1e-6
 
-        assert self.util > 0.5, \
-                ('MapEyeriss: PE array resource utilization < 50%. '
-                 'Physical PE set {}; array size {}; logic PE set {}; '
-                 'folded logic PE set {}. Can\'t we fit more?'
-                 .format(self.dim_ppeset, self.dim_array,
-                         self.dim_lpeset, self.dim_flpeset))
+#        assert self.util > 0.5, \
+ #               ('MapEyeriss: PE array resource utilization < 50%. '
+  #               'Physical PE set {}; array size {}; logic PE set {}; '
+   #              'folded logic PE set {}. Can\'t we fit more?'
+    #             .format(self.dim_ppeset, self.dim_array,
+     #                    self.dim_lpeset, self.dim_flpeset))
 
     def utilization(self):
         return self.util
@@ -547,3 +547,104 @@ class MapStrategyEyeriss(MapStrategy):
 
             yield tuple(lcnt), locc, repl_size, repl_cnt
 
+class MapStrategyWS(MapStrategyEyeriss):
+
+
+    def __init__(self, layer, batch_size, occupancy, dim_array):
+
+        super(MapStrategyWS, self).__init__(layer, batch_size, occupancy, dim_array)
+
+        if isinstance(self.layer, ConvLayer):
+            # Conv and FC layers.
+            # Weight Stationary Logic PE set ops = (Ifmap width + (Filter Width -1)) * (Ifmap height - filter height + 1)
+            # Dimenstion of Logic PE = Width * Height of filter
+            # Number of Logic PE set = batch_size * Filter ch #
+            self.ops_lpe = (self.layer.wifm + self.layer.wfil - 1) * (self.layer.hifm - self.layer.hfil + 1)
+            self.dim_lpeset = PhyDim2(self.layer.hfil, self.layer.wfil)
+            cnt_lpeset = self.batch_size * self.layer.nifm
+        elif isinstance(self.layer, LocalRegionLayer):
+            self.ops_lpe = self.layer.nreg * self.layer.wreg * self.layer.wofm
+            self.dim_lpeset = PhyDim2(h=self.layer.hreg, w=self.layer.hofm)
+            cnt_lpeset = self.batch_size * self.layer.nofm
+        else:
+            raise TypeError('Map: unrecognized layer type {}.'
+                            .format(type(self.layer)))
+
+        ops_logic_total = self.ops_lpe * self.dim_lpeset.size() * cnt_lpeset
+        assert ops_logic_total == self.layer.total_ops(self.batch_size)
+
+        # Physical PE set through replication and folding.
+        self._repl_fold()
+
+        # PE utilization.
+        # We replicate repl.size() lpesets, and then fold to fold.size()
+        # physical array passes.
+        self.util = 1. * (self.dim_lpeset.size() * self.repl.size()) \
+                / (self.dim_array.size() * self.fold.size())
+        assert self.util <= 1. + 1e-6
+
+#        assert self.util > 0.5, \
+#                ('MapEyeriss: PE array resource utilization < 50%. '
+#                 'Physical PE set {}; array size {}; logic PE set {}; '
+#                 'folded logic PE set {}. Can\'t we fit more?'
+#                 .format(self.dim_ppeset, self.dim_array,
+#                         self.dim_lpeset, self.dim_flpeset))
+
+    def utilization(self):
+        return self.util
+
+   # def gen_nested_loop_desc(self):
+
+class MapStrategyOS(MapStrategyEyeriss):
+    
+
+    def __init__(self, layer, batch_size, occupancy, dim_array):
+
+        super(MapStrategyOS, self).__init__(layer, batch_size, occupancy, dim_array)
+
+        if isinstance(self.layer, ConvLayer):
+            # Conv layers: Use SOC-MOP scheme
+            # single Logic PE ops = Ofmap height * width + (ofmap height - 1) + (ofmap width - 1)
+            # Dimenstion of Logic PE = dimenstion of Ofmap
+            # Logic PE set number = batch_size * Ofmap Ch #
+            self.ops_lpe = (self.hofm * self.wofm) + (wofm-1) +(hofm-1)
+            self.dim_lpeset = PhyDim2(self.layer.hofm, self.layer.wofm)
+            cnt_lpeset = self.batch_size * self.layer.nofm
+        elif isinstance(self.layer, FCLayer):
+            # FC layers: Use MOC-SOP scheme
+            # single Logic PE ops = (2 * filter width - 1) * # of ofmap ch
+            # Dimenstion of Logic PE = dimenstion of filter
+            # Logic PE set number = batch_size * ofmap height * ofmap width
+            self.ops_lpe = (2 * self.layer.wfil - 1) * self.layer.nofm
+            self.dim_lpeset = PhyDim2(self.layer.hfil, self.layer.wfil)
+            cnt_lpeset = self.batch_size * self.layer.hofm * self.layer.wofm
+        elif isinstance(self.layer, LocalRegionLayer):
+            self.ops_lpe = self.layer.nreg * self.layer.wreg * self.layer.wofm
+            self.dim_lpeset = PhyDim2(h=self.layer.hreg, w=self.layer.hofm)
+            cnt_lpeset = self.batch_size * self.layer.hofm * self.layer.wofm
+        else:
+            raise TypeError('Map: unrecognized layer type {}.'
+                            .format(type(self.layer)))
+
+        ops_logic_total = self.ops_lpe * self.dim_lpeset.size() * cnt_lpeset
+        assert ops_logic_total == self.layer.total_ops(self.batch_size)
+
+        # Physical PE set through replication and folding.
+        self._repl_fold()
+
+        # PE utilization.
+        # We replicate repl.size() lpesets, and then fold to fold.size()
+        # physical array passes.
+        self.util = 1. * (self.dim_lpeset.size() * self.repl.size()) \
+                / (self.dim_array.size() * self.fold.size())
+        assert self.util <= 1. + 1e-6
+#        assert self.util > 0.5, \
+ #               ('MapEyeriss: PE array resource utilization < 50%. '
+  #               'Physical PE set {}; array size {}; logic PE set {}; '
+   #              'folded logic PE set {}. Can\'t we fit more?'
+    #             .format(self.dim_ppeset, self.dim_array,
+     #                    self.dim_lpeset, self.dim_flpeset))
+    def utilization(self):
+        return self.util
+
+   # def gen_nested_loop_desc(self):
